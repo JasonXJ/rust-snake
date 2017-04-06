@@ -16,7 +16,7 @@ use graphics::types::Color;
 const BLOCK_SIZE: usize = 5;
 const GRID_WIDTH: usize = 120;
 const GRID_HEIGHT: usize = 100;
-const UPDATE_PER_SECONDS: u64 = 10;
+const UPDATE_PER_SECONDS: u64 = 20;
 const BLACK: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 const SNAKE_INIT_LEN: usize = 10;
@@ -26,9 +26,11 @@ struct App {
     grid: Grid,
     need_repaint: bool,
     snake: Snake,
+    gameover: bool,
 }
 
 // TODO: implement the food
+// TODO: implement restart
 impl App {
     fn new(gl: GlGraphics) -> App {
         let mut app = App {
@@ -36,6 +38,7 @@ impl App {
             grid: Grid::new(GRID_WIDTH, GRID_HEIGHT, BLOCK_SIZE, WHITE),
             need_repaint: true,
             snake: Snake::new(((SNAKE_INIT_LEN-1) as isize, (GRID_HEIGHT/2) as isize), SNAKE_INIT_LEN),
+            gameover: false,
         };
 
         // Initialize the grid with the snake
@@ -52,18 +55,36 @@ impl App {
     }
 
     fn update(&mut self, _: &UpdateArgs) {
-        // TODO: do the dead check
-        let (head, optional_tail) = self.snake.update(false);
-        self.grid.update(head, BLACK);
-        if let Some(tail) = optional_tail {
-            self.grid.update(tail, WHITE);
+        if !self.gameover {
+            let next_head = self.snake.next_head();
+            if !App::coordinate_is_legal(&self.grid, next_head) {
+                self.gameover = true;
+            } else {
+                // TODO: handle food
+                let (_, optional_tail) = self.snake.update(false);
+                self.grid.update(next_head, BLACK);
+                if let Some(tail) = optional_tail {
+                    self.grid.update(tail, WHITE);
+                }
+            }
         }
     }
 
+    fn coordinate_is_legal(grid: &Grid, c: Coordinate) -> bool {
+        if c.x >= 0 && c.x < GRID_WIDTH as isize && c.y >=0 && c.y < GRID_HEIGHT as isize {
+            if grid.color_grid[c.y as usize][c.x as usize] == WHITE {
+                return true;
+            }
+        }
+        false
+    }
+
     fn button_pressed(&mut self, button: &Button) {
-        if let &Button::Keyboard(key) = button {
-            if let Some(d) = Direction::from_key(key) {
-                self.snake.try_redirect(d);
+        if !self.gameover {
+            if let &Button::Keyboard(key) = button {
+                if let Some(d) = Direction::from_key(key) {
+                    self.snake.try_redirect(d);
+                }
             }
         }
     }
