@@ -2,6 +2,7 @@ extern crate piston;
 extern crate graphics;
 extern crate glutin_window;
 extern crate opengl_graphics;
+extern crate rand;
 
 use std::collections::VecDeque;
 use std::ops::{ Mul, Add, Sub };
@@ -13,10 +14,10 @@ use glutin_window::GlutinWindow as Window;
 use opengl_graphics::{ GlGraphics, OpenGL };
 use graphics::types::Color;
 
-const BLOCK_SIZE: usize = 5;
-const GRID_WIDTH: usize = 120;
-const GRID_HEIGHT: usize = 100;
-const UPDATE_PER_SECONDS: u64 = 20;
+const BLOCK_SIZE: usize = 10;
+const GRID_WIDTH: usize = 90;
+const GRID_HEIGHT: usize = 75;
+const UPDATE_PER_SECONDS: u64 = 30;
 const BLACK: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 const WHITE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 const SNAKE_INIT_LEN: usize = 10;
@@ -24,20 +25,28 @@ const SNAKE_INIT_LEN: usize = 10;
 struct App {
     gl: GlGraphics,  // OpenGL drawing backend.
     grid: Grid,
-    need_repaint: bool,
+    repaint_all: bool,
     snake: Snake,
+    food: Coordinate,
     gameover: bool,
 }
 
-// TODO: implement the food
+#[derive(Eq, PartialEq)]
+enum Fate {
+    Die,
+    Eat,
+    Move,
+}
+
 // TODO: implement restart
 impl App {
     fn new(gl: GlGraphics) -> App {
         let mut app = App {
             gl: gl,
             grid: Grid::new(GRID_WIDTH, GRID_HEIGHT, BLOCK_SIZE, WHITE),
-            need_repaint: true,
+            repaint_all: true,
             snake: Snake::new(((SNAKE_INIT_LEN-1) as isize, (GRID_HEIGHT/2) as isize), SNAKE_INIT_LEN),
+            food: Coordinate{ x: 0, y: 0 },
             gameover: false,
         };
 
@@ -46,37 +55,44 @@ impl App {
             app.grid.update(*c, BLACK);
         }
 
+        app.renew_food();
+
         app
     }
 
     fn render(&mut self, args: &RenderArgs) {
-        self.grid.render(&mut self.gl, args, self.need_repaint);
-        self.need_repaint = false;
+        self.grid.render(&mut self.gl, args, self.repaint_all);
+        self.repaint_all = false;
     }
 
     fn update(&mut self, _: &UpdateArgs) {
         if !self.gameover {
-            let next_head = self.snake.next_head();
-            if !App::coordinate_is_legal(&self.grid, next_head) {
-                self.gameover = true;
-            } else {
-                // TODO: handle food
-                let (_, optional_tail) = self.snake.update(false);
-                self.grid.update(next_head, BLACK);
-                if let Some(tail) = optional_tail {
-                    self.grid.update(tail, WHITE);
+            match self.determine_fate() {
+                Fate::Die => { self.gameover = true; }
+                f => {
+                    let (new_head, optional_tail) = self.snake.update(f == Fate::Eat);
+                    self.grid.update(new_head, BLACK);
+                    if let Some(tail) = optional_tail {
+                        self.grid.update(tail, WHITE);
+                    }
+                    if f == Fate::Eat {
+                        self.renew_food();
+                    }
                 }
             }
         }
     }
 
-    fn coordinate_is_legal(grid: &Grid, c: Coordinate) -> bool {
+    fn determine_fate(&self) -> Fate {
+        let c = self.snake.next_head();
         if c.x >= 0 && c.x < GRID_WIDTH as isize && c.y >=0 && c.y < GRID_HEIGHT as isize {
-            if grid.color_grid[c.y as usize][c.x as usize] == WHITE {
-                return true;
-            }
+            if self.grid.color_grid[c.y as usize][c.x as usize] == WHITE {
+                return Fate::Move;
+            } else if c == self.food {
+                return Fate::Eat
+            } 
         }
-        false
+        Fate::Die
     }
 
     fn button_pressed(&mut self, button: &Button) {
@@ -87,6 +103,22 @@ impl App {
                 }
             }
         }
+    }
+
+    /// Randomly generate a new coordinate for self.food, and update self.grid with the new food.
+    /// Note that this function does not care of the old food.
+    fn renew_food(&mut self) {
+        loop {
+            self.food = Coordinate {
+                x: (rand::random::<usize>() % GRID_WIDTH) as isize,
+                y: (rand::random::<usize>() % GRID_HEIGHT) as isize
+            };
+            if self.grid.color_grid[self.food.y as usize][self.food.x as usize] != BLACK {
+                break
+            }
+        }
+
+        self.grid.update(self.food, BLACK);
     }
 }
 
